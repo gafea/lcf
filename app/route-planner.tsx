@@ -2,8 +2,10 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import { Clock3, Route } from "lucide-react";
 import { requestRoutePlan, type RoutePoint } from "./route-api";
 import { readRouteHistory, upsertRouteHistoryEntry, type RouteHistoryEntry } from "./route-history";
+import type { RouteSummaryItem } from "./route-api";
 
 const RouteMap = dynamic(() => import("./route-map").then((module) => module.RouteMap), { ssr: false });
 
@@ -15,6 +17,7 @@ export function RoutePlanner() {
   const [responsePath, setResponsePath] = useState<RoutePoint[]>([]);
   const [responseText, setResponseText] = useState("");
   const [isResponseTextError, setIsResponseTextError] = useState(false);
+  const [routeSummaryItems, setRouteSummaryItems] = useState<RouteSummaryItem[]>([]);
   const [routeHistory, setRouteHistory] = useState<RouteHistoryEntry[]>([]);
   const useDebugRouteRef = useRef(false);
 
@@ -24,6 +27,7 @@ export function RoutePlanner() {
     setResponseText("");
     setIsResponseTextError(false);
     setResponsePath([]);
+    setRouteSummaryItems([]);
     useDebugRouteRef.current = false;
   }
 
@@ -31,6 +35,7 @@ export function RoutePlanner() {
     setIsSubmitting(true);
     setIsResponseTextError(false);
     setResponseText("Your route is being calculated...");
+    setRouteSummaryItems([]);
 
     const nextRouteHistory = upsertRouteHistoryEntry(window.localStorage, routeHistory, origin, destination);
     setRouteHistory(nextRouteHistory);
@@ -47,11 +52,13 @@ export function RoutePlanner() {
         () => setResponseText("This might take a bit longer..."),
         useDebugRoute,
       );
-      setResponseText(routeResult.summaryText);
+      setRouteSummaryItems(routeResult.summaryItems);
+      setResponseText("");
       setResponsePath(routeResult.path);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
       console.log(error.message);
+      setRouteSummaryItems([]);
       setResponseText(error.cause ? String(error.cause) : "An Error Occurred. Please Try Again.");
       setIsResponseTextError(true);
     } finally {
@@ -134,7 +141,25 @@ export function RoutePlanner() {
             </label>
 
             {responseText ? (
-              <pre className={`app-response ${isResponseTextError ? "app-response-error" : ""}`}>{responseText}</pre>
+              <div className={`app-response ${isResponseTextError ? "app-response-error" : ""}`}>{responseText}</div>
+            ) : null}
+
+            {routeSummaryItems.length > 0 ? (
+              <section className="app-summary-grid">
+                {routeSummaryItems.map((summaryItem) => (
+                  <article key={summaryItem.kind} className="app-summary-card">
+                    <div className="app-summary-card-head">
+                      {summaryItem.kind === "distance" ? (
+                        <Route className="app-summary-icon" aria-hidden="true" />
+                      ) : (
+                        <Clock3 className="app-summary-icon" aria-hidden="true" />
+                      )}
+                      <span className="app-summary-title">{summaryItem.title}</span>
+                    </div>
+                    <div className="app-summary-value">{summaryItem.value}</div>
+                  </article>
+                ))}
+              </section>
             ) : null}
 
             <div className="flex gap-3">
@@ -192,7 +217,7 @@ export function RoutePlanner() {
         </aside>
 
         <section className="h-full app-map-shell">
-          <RouteMap path={responsePath} />
+          <RouteMap path={responsePath} startLabel={startingLocation} endLabel={dropOffPoint} />
         </section>
       </div>
     </main>

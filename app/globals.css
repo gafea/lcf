@@ -147,6 +147,47 @@ button {
   opacity: 0.7;
 }
 
+.app-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.app-summary-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 0.875rem;
+}
+
+.app-summary-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.app-summary-icon {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--brand);
+}
+
+.app-summary-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.app-summary-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--foreground);
+}
+
 .app-history {
   border-top: 1px solid var(--border-subtle);
   padding-top: 1rem;
@@ -273,19 +314,45 @@ button {
   min-height: 70vh;
 }
 
-/* Numbered route marker */
-.route-number-icon {
-  display: block;
+.route-pin-icon {
+  background: transparent;
+  border: 0;
 }
-.route-number-icon .num {
-  width: 28px;
-  height: 28px;
-  line-height: 28px;
-  border-radius: 9999px;
+
+.route-pin-shape {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0 auto;
+  transform: rotate(-45deg);
+  border-radius: 50% 50% 50% 0;
   background: var(--route-marker);
-  color: white;
-  text-align: center;
-  font-weight: 700;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  border: 2px solid rgba(255, 255, 255, 0.9);
+}
+
+.route-pin-dot {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: white;
+}
+
+.route-label {
+  border: 0;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--foreground);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  border-radius: 9999px;
+  padding: 0.35rem 0.65rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.route-label::before {
+  border-top-color: rgba(255, 255, 255, 0.95);
 }

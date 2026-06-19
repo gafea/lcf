@@ -12,7 +12,7 @@ function getCssVariable(name: string, fallback: string) {
   return value || fallback;
 }
 
-export function RouteMap({ path }: { path: RoutePoint[] }) {
+export function RouteMap({ path, startLabel, endLabel }: { path: RoutePoint[]; startLabel: string; endLabel: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
@@ -60,29 +60,55 @@ export function RouteMap({ path }: { path: RoutePoint[] }) {
       return;
     }
 
-    const lineColor = getCssVariable("--route-line", "#005fb8");
-    const markerColor = getCssVariable("--route-marker", "#004c93");
-    const polyline = L.polyline(path, {
-      color: lineColor,
+    const startPoint = path[0];
+    const endPoint = path[path.length - 1];
+    const routeBounds = L.latLngBounds(path);
+
+    L.polyline(path, {
+      color: getCssVariable("--route-line", "#005fb8"),
       weight: 4,
+      opacity: 0.9,
+      lineCap: "round",
+      lineJoin: "round",
     }).addTo(overlay);
 
-    path.forEach((point, idx) => {
-      const icon = L.divIcon({
-        className: "route-number-icon",
-        html: `<div class="num">${idx + 1}</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 28],
-      });
+    const startCircle = L.circleMarker(startPoint, {
+      radius: 9,
+      color: getCssVariable("--route-marker", "#004c93"),
+      weight: 3,
+      fillColor: getCssVariable("--route-marker", "#004c93"),
+      fillOpacity: 1,
+    }).addTo(overlay);
 
-      L.marker(point, { icon }).addTo(overlay);
+    startCircle.bindTooltip(startLabel, {
+      permanent: true,
+      direction: "top",
+      offset: [0, -10],
+      className: "route-label route-label-start",
+      opacity: 1,
     });
 
-    map.fitBounds(polyline.getBounds(), { padding: [24, 24] });
+    const endIcon = L.divIcon({
+      className: "route-pin-icon",
+      html: '<span class="route-pin-shape"><span class="route-pin-dot"></span></span>',
+      iconSize: [18, 18],
+      iconAnchor: [9, 18],
+    });
+
+    const endMarker = L.marker(endPoint, { icon: endIcon }).addTo(overlay);
+    endMarker.bindTooltip(endLabel, {
+      permanent: true,
+      direction: "bottom",
+      offset: [0, 12],
+      className: "route-label route-label-end",
+      opacity: 1,
+    });
+
+    map.fitBounds(routeBounds, { padding: [24, 24] });
     requestAnimationFrame(() => {
       map.invalidateSize();
     });
-  }, [path]);
+  }, [path, startLabel, endLabel]);
 
   return <div ref={containerRef} className="app-map" />;
 }

@@ -111,7 +111,10 @@ describe("route API helpers", () => {
         [22.326442, 114.167811],
         [22.284419, 114.15951],
       ],
-      summaryText: "total distance: 20000\ntotal time: 1800",
+      summaryItems: [
+        { kind: "distance", title: "Total Distance", value: "20.00 km" },
+        { kind: "time", title: "Total Time", value: "30m 0s" },
+      ],
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

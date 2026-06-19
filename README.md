@@ -18,6 +18,6 @@ Open [http://localhost:3030](http://localhost:3030) with your browser to see the
 
 ## Added UX Features
 
-- *Debug Mode*: Hold down Ctrl key to always use the suceess route API
-- *Search History*: List of searches saved on browser and restorable on click.
-- *Simplified Map Display*: Hid the point numbers and show label and icons.
+- _Debug Mode_: Hold down Ctrl key to always use the suceess route API
+- _Search History_: List of searches saved on browser and restorable on click.
+- _Simplified Map Display_: Hid the point numbers and show label and icons.
