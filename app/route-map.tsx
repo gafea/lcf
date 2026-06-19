@@ -2,9 +2,7 @@
 
 import L from "leaflet";
 import { useEffect, useRef } from "react";
-
-type RoutePoint = [number, number];
-type RouteMapProps = { path: RoutePoint[] };
+import { type RoutePoint } from "./route-api";
 
 const hongKongCenter: RoutePoint = [22.3193, 114.1694];
 
@@ -14,7 +12,7 @@ function getCssVariable(name: string, fallback: string) {
   return value || fallback;
 }
 
-export function RouteMap({ path }: RouteMapProps) {
+export function RouteMap({ path }: { path: RoutePoint[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);

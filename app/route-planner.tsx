@@ -2,13 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { useState } from "react";
-
-type RoutePlannerProps = { apiDomain: string };
-type RoutePoint = [number, number];
+import { requestRoutePlan, type RoutePoint } from "./route-api";
 
 const RouteMap = dynamic(() => import("./route-map").then((module) => module.RouteMap), { ssr: false });
 
-export function RoutePlanner({ apiDomain }: RoutePlannerProps) {
+export function RoutePlanner() {
   const [startingLocation, setStartingLocation] = useState("");
   const [dropOffPoint, setDropOffPoint] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -19,72 +17,25 @@ export function RoutePlanner({ apiDomain }: RoutePlannerProps) {
   async function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    setIsSubmitting(true);
+    setIsResponseTextError(false);
+    setResponseText("Your route is being calculated...");
+    setResponsePath([]);
+
     try {
-      if (!apiDomain) {
-        throw new Error("A configuration error occured: API_DOMAIN is not configured.");
-      }
-
-      if (!startingLocation.trim()) {
-        throw new Error("Please enter your starting location.");
-      }
-
-      if (!dropOffPoint.trim()) {
-        throw new Error("Please enter your drop-off point.");
-      }
-
-      setIsSubmitting(true);
-      setIsResponseTextError(false);
-      setResponseText("Your route is being calculated...");
-      setResponsePath([]);
-
-      // get route token
-      const postResponse = await fetch(`${apiDomain}/route`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          origin: startingLocation,
-          destination: dropOffPoint,
-        }),
-      });
-
-      if (!postResponse.ok) {
-        throw new Error();
-      }
-
-      const { token } = (await postResponse.json()) as { token?: string };
-
-      if (!token) {
-        throw new Error();
-      }
-
-      // after getting route token, get route and retry until success or error
-      while (true) {
-        const getResponse = await fetch(`${apiDomain}/route/${token}`);
-
-        if (!getResponse.ok) {
-          throw new Error();
-        }
-
-        const routeResult = await getResponse.json();
-        if (routeResult.status != "in progress") {
-          if (routeResult.status === "success") {
-            setResponseText(`total distance: ${routeResult.total_distance}\ntotal time: ${routeResult.total_time}`);
-            setResponsePath(
-              routeResult.path.map((point: string[]) => [Number(point[0]), Number(point[1])] as RoutePoint),
-            );
-            break;
-          }
-
-          throw new Error(routeResult.error ?? "");
-        }
-
-        setResponseText("This might take a moment...");
-      }
-    } catch (error) {
+      const routeResult = await requestRoutePlan(
+        process.env.NEXT_PUBLIC_API_DOMAIN ?? "",
+        startingLocation,
+        dropOffPoint,
+        () => setResponseText("This might take a bit longer..."),
+      );
+      setResponseText(routeResult.summaryText);
+      setResponsePath(routeResult.path);
+    } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      console.log(error.message);
+      setResponseText(error.cause ?? "An Error Occurred. Please Try Again.");
       setIsResponseTextError(true);
-      setResponseText(error instanceof Error && error.message ? error.message : "An Error Occurred. Please Try Again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -125,7 +76,7 @@ export function RoutePlanner({ apiDomain }: RoutePlannerProps) {
 
             <div className="flex gap-3">
               <button type="submit" className="app-button app-button-primary cursor-pointer" disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Submit"}
+                {isSubmitting ? "Finding..." : "Find Route"}
               </button>
               <button
                 type="button"
