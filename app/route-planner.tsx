@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { requestRoutePlan, type RoutePoint } from "./route-api";
+import { readRouteHistory, upsertRouteHistoryEntry, type RouteHistoryEntry } from "./route-history";
 
 const RouteMap = dynamic(() => import("./route-map").then((module) => module.RouteMap), { ssr: false });
 
@@ -14,9 +15,59 @@ export function RoutePlanner() {
   const [responsePath, setResponsePath] = useState<RoutePoint[]>([]);
   const [responseText, setResponseText] = useState("");
   const [isResponseTextError, setIsResponseTextError] = useState(false);
+  const [routeHistory, setRouteHistory] = useState<RouteHistoryEntry[]>([]);
   const useDebugRouteRef = useRef(false);
 
+  function reset() {
+    setStartingLocation("");
+    setDropOffPoint("");
+    setResponseText("");
+    setIsResponseTextError(false);
+    setResponsePath([]);
+    useDebugRouteRef.current = false;
+  }
+
+  async function submitRouteSearch(origin: string, destination: string, useDebugRoute: boolean) {
+    setIsSubmitting(true);
+    setIsResponseTextError(false);
+    setResponseText("Your route is being calculated...");
+
+    const nextRouteHistory = upsertRouteHistoryEntry(window.localStorage, routeHistory, origin, destination);
+    setRouteHistory(nextRouteHistory);
+
+    if (!useDebugRoute) {
+      setResponsePath([]);
+    }
+
+    try {
+      const routeResult = await requestRoutePlan(
+        process.env.NEXT_PUBLIC_API_DOMAIN ?? "",
+        origin,
+        destination,
+        () => setResponseText("This might take a bit longer..."),
+        useDebugRoute,
+      );
+      setResponseText(routeResult.summaryText);
+      setResponsePath(routeResult.path);
+    } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      console.log(error.message);
+      setResponseText(error.cause ? String(error.cause) : "An Error Occurred. Please Try Again.");
+      setIsResponseTextError(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleRouteHistoryClick(historyEntry: RouteHistoryEntry) {
+    setStartingLocation(historyEntry.startingLocation);
+    setDropOffPoint(historyEntry.dropOffPoint);
+    void submitRouteSearch(historyEntry.startingLocation, historyEntry.dropOffPoint, false);
+  }
+
   useEffect(() => {
+    setRouteHistory(readRouteHistory(window.localStorage));
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Control") {
         setIsCtrlPressed(true);
@@ -50,39 +101,14 @@ export function RoutePlanner() {
     const useDebugRoute = useDebugRouteRef.current;
     useDebugRouteRef.current = false;
 
-    setIsSubmitting(true);
-    setIsResponseTextError(false);
-    setResponseText("Your route is being calculated...");
-
-    if (!useDebugRoute) {
-      setResponsePath([]);
-    }
-
-    try {
-      const routeResult = await requestRoutePlan(
-        process.env.NEXT_PUBLIC_API_DOMAIN ?? "",
-        startingLocation,
-        dropOffPoint,
-        () => setResponseText("This might take a bit longer..."),
-        useDebugRoute,
-      );
-      setResponseText(routeResult.summaryText);
-      setResponsePath(routeResult.path);
-    } catch (e) {
-      const error = e instanceof Error ? e : new Error(String(e));
-      console.log(error.message);
-      setResponseText(error.cause ?? "An Error Occurred. Please Try Again.");
-      setIsResponseTextError(true);
-    } finally {
-      setIsSubmitting(false);
-    }
+    void submitRouteSearch(startingLocation, dropOffPoint, useDebugRoute);
   }
 
   return (
     <main className="app-shell">
-      <div className="grid min-h-screen lg:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="app-layout grid lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="app-sidebar">
-          <form className="space-y-5" onSubmit={handleSubmit}>
+          <form className="app-sidebar-form" onSubmit={handleSubmit}>
             <label className="block space-y-2 text-sm font-medium">
               <span>Starting Location</span>
               <input
@@ -117,7 +143,7 @@ export function RoutePlanner() {
                 onClick={(event) => {
                   useDebugRouteRef.current = event.ctrlKey;
                 }}
-                className="app-button app-button-primary cursor-pointer"
+                className="app-button app-button-primary"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? "Finding..." : isCtrlPressed ? "Find Route (Debug)" : "Find Route"}
@@ -125,19 +151,43 @@ export function RoutePlanner() {
               <button
                 type="button"
                 onClick={() => {
-                  setStartingLocation("");
-                  setDropOffPoint("");
-                  setResponseText("");
-                  setIsResponseTextError(false);
-                  setResponsePath([]);
-                  useDebugRouteRef.current = false;
+                  reset();
                 }}
-                className="app-button app-button-secondary cursor-pointer"
+                className="app-button app-button-secondary"
                 disabled={isSubmitting}
               >
                 Reset
               </button>
             </div>
+
+            {routeHistory.length > 0 && (
+              <section className="app-history">
+                <h2 className="app-history-title">Recent Searches</h2>
+                <ul className="app-history-list">
+                  {routeHistory.map((historyEntry) => (
+                    <li key={`${historyEntry.startingLocation}-${historyEntry.dropOffPoint}`}>
+                      <button
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() => handleRouteHistoryClick(historyEntry)}
+                        className="app-button-secondary app-history-button"
+                        aria-label={`Refill route from ${historyEntry.startingLocation} to ${historyEntry.dropOffPoint}`}
+                      >
+                        <span className="app-history-button-text app-history-button-start">
+                          {historyEntry.startingLocation}
+                        </span>
+                        <span className="app-history-arrow" aria-hidden="true">
+                          🡺
+                        </span>
+                        <span className="app-history-button-text app-history-button-end">
+                          {historyEntry.dropOffPoint}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </form>
         </aside>
 
