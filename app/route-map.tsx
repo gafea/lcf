@@ -39,7 +39,25 @@ async function fetchDrivingRoute(points: RoutePoint[]): Promise<RoutePoint[]> {
   return points; // Fallback to the original coordinates if request fails
 }
 
-export function RouteMap({ path, startLabel, endLabel }: { path: RoutePoint[]; startLabel: string; endLabel: string }) {
+export function RouteMap({
+  path,
+  startLabel,
+  endLabel,
+  startCoords,
+  endCoords,
+  pinningMode,
+  onConfirmLocation,
+  onCancelPinning,
+}: {
+  path: RoutePoint[];
+  startLabel: string;
+  endLabel: string;
+  startCoords: RoutePoint | null;
+  endCoords: RoutePoint | null;
+  pinningMode: "start" | "end" | null;
+  onConfirmLocation: (coords: RoutePoint) => void;
+  onCancelPinning: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
@@ -103,63 +121,135 @@ export function RouteMap({ path, startLabel, endLabel }: { path: RoutePoint[]; s
 
     overlay.clearLayers();
 
-    if (path.length === 0) {
+    // Determine what points we are rendering
+    const startPoint = path.length > 0 ? path[0] : startCoords;
+    const endPoint = path.length > 0 ? path[path.length - 1] : endCoords;
+
+    if (!startPoint && !endPoint && path.length === 0) {
       map.setView(hongKongCenter, 11);
       return;
     }
 
-    const startPoint = path[0];
-    const endPoint = path[path.length - 1];
-
     // Use the OSRM driving route if it has loaded, otherwise fall back to drawing the original path
     const pathToDraw = renderedPath.length > 0 ? renderedPath : path;
-    const routeBounds = L.latLngBounds(pathToDraw);
 
-    L.polyline(pathToDraw, {
-      color: getCssVariable("--route-line", "#005fb8"),
-      weight: 4,
-      opacity: 0.9,
-      lineCap: "round",
-      lineJoin: "round",
-    }).addTo(overlay);
+    if (pathToDraw.length > 0) {
+      L.polyline(pathToDraw, {
+        color: getCssVariable("--route-line", "#005fb8"),
+        weight: 4,
+        opacity: 0.9,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(overlay);
+    }
 
-    const startCircle = L.circleMarker(startPoint, {
-      radius: 9,
-      color: getCssVariable("--route-marker", "#004c93"),
-      weight: 3,
-      fillColor: getCssVariable("--route-marker", "#004c93"),
-      fillOpacity: 1,
-    }).addTo(overlay);
+    if (startPoint) {
+      const startIcon = L.divIcon({
+        className: "route-pin-icon",
+        html: '<span class="route-pin-shape route-pin-start-shape"><span class="route-pin-dot"></span></span>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 18],
+      });
 
-    startCircle.bindTooltip(startLabel, {
-      permanent: true,
-      direction: "top",
-      offset: [0, -10],
-      className: "route-label route-label-start",
-      opacity: 1,
-    });
+      const startMarker = L.marker(startPoint, { icon: startIcon }).addTo(overlay);
+      startMarker.bindTooltip(startLabel || "Starting Location", {
+        permanent: true,
+        direction: "top",
+        offset: [0, -10],
+        className: "route-label route-label-start",
+        opacity: 1,
+      });
+    }
 
-    const endIcon = L.divIcon({
-      className: "route-pin-icon",
-      html: '<span class="route-pin-shape"><span class="route-pin-dot"></span></span>',
-      iconSize: [18, 18],
-      iconAnchor: [9, 18],
-    });
+    if (endPoint) {
+      const endIcon = L.divIcon({
+        className: "route-pin-icon",
+        html: '<span class="route-pin-shape"><span class="route-pin-dot"></span></span>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 18],
+      });
 
-    const endMarker = L.marker(endPoint, { icon: endIcon }).addTo(overlay);
-    endMarker.bindTooltip(endLabel, {
-      permanent: true,
-      direction: "bottom",
-      offset: [0, 12],
-      className: "route-label route-label-end",
-      opacity: 1,
-    });
+      const endMarker = L.marker(endPoint, { icon: endIcon }).addTo(overlay);
+      endMarker.bindTooltip(endLabel || "Drop-off Point", {
+        permanent: true,
+        direction: "bottom",
+        offset: [0, 12],
+        className: "route-label route-label-end",
+        opacity: 1,
+      });
+    }
 
-    map.fitBounds(routeBounds, { padding: [24, 24] });
+    // Fit bounds to all shown features
+    const boundsPoints: L.LatLngExpression[] = [];
+    if (pathToDraw.length > 0) {
+      boundsPoints.push(...pathToDraw);
+    } else {
+      if (startPoint) boundsPoints.push(startPoint);
+      if (endPoint) boundsPoints.push(endPoint);
+    }
+
+    if (boundsPoints.length > 0) {
+      const routeBounds = L.latLngBounds(boundsPoints);
+      map.fitBounds(routeBounds, { padding: [24, 24], maxZoom: 15 });
+    }
+
     requestAnimationFrame(() => {
       map.invalidateSize();
     });
-  }, [path, renderedPath, startLabel, endLabel]);
+  }, [path, renderedPath, startLabel, endLabel, startCoords, endCoords]);
 
-  return <div ref={containerRef} className="app-map" />;
+  return (
+    <div className="relative w-full h-full" style={{ minHeight: "70vh" }}>
+      <div ref={containerRef} className="app-map" />
+
+      {pinningMode && (
+        <>
+          {/* Static Center Pin Overlay */}
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -100%)",
+              zIndex: 1000,
+              pointerEvents: "none",
+            }}
+          >
+            <span className={`route-pin-shape ${pinningMode === "start" ? "route-pin-start-shape" : ""}`}>
+              <span className="route-pin-dot"></span>
+            </span>
+          </div>
+
+          {/* Floating Confirm/Cancel Overlay Banner */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white px-4 py-2.5 rounded-lg shadow-lg border border-[#d7dbe0] flex items-center gap-3 w-[90%] max-w-[360px] justify-between">
+            <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">
+              Select {pinningMode === "start" ? "Starting Location" : "Drop-off Point"}
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const map = mapRef.current;
+                  if (map) {
+                    const center = map.getCenter();
+                    onConfirmLocation([center.lat, center.lng]);
+                  }
+                }}
+                className="app-button app-button-primary h-7 px-2.5 py-0 text-xs font-bold"
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                onClick={onCancelPinning}
+                className="app-button app-button-secondary h-7 px-2.5 py-0 text-xs font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

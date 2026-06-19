@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import { Clock3, Route } from "lucide-react";
+import { Clock3, Route, MapPin } from "lucide-react";
 import { requestRoutePlan, type RoutePoint } from "./route-api";
 import { readRouteHistory, upsertRouteHistoryEntry, type RouteHistoryEntry } from "./route-history";
 import type { RouteSummaryItem } from "./route-api";
@@ -21,6 +21,20 @@ export function RoutePlanner() {
   const [routeHistory, setRouteHistory] = useState<RouteHistoryEntry[]>([]);
   const useDebugRouteRef = useRef(false);
 
+  const [startCoords, setStartCoords] = useState<RoutePoint | null>(null);
+  const [endCoords, setEndCoords] = useState<RoutePoint | null>(null);
+  const [pinningMode, setPinningMode] = useState<"start" | "end" | null>(null);
+
+  function parseCoordinates(str: string): RoutePoint | null {
+    const parts = str.split(",").map((p) => Number(p.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] !== 0 && parts[1] !== 0) {
+      if (parts[0] >= -90 && parts[0] <= 90 && parts[1] >= -180 && parts[1] <= 180) {
+        return [parts[0], parts[1]];
+      }
+    }
+    return null;
+  }
+
   function reset() {
     setStartingLocation("");
     setDropOffPoint("");
@@ -29,6 +43,9 @@ export function RoutePlanner() {
     setResponsePath([]);
     setRouteSummaryItems([]);
     useDebugRouteRef.current = false;
+    setStartCoords(null);
+    setEndCoords(null);
+    setPinningMode(null);
   }
 
   async function submitRouteSearch(origin: string, destination: string, useDebugRoute: boolean) {
@@ -71,6 +88,50 @@ export function RoutePlanner() {
     setDropOffPoint(historyEntry.dropOffPoint);
     void submitRouteSearch(historyEntry.startingLocation, historyEntry.dropOffPoint, false);
   }
+
+  function handlePinStartOnMap() {
+    setPinningMode("start");
+  }
+
+  function handlePinEndOnMap() {
+    setPinningMode("end");
+  }
+
+  function handleConfirmLocation(coords: RoutePoint) {
+    if (pinningMode === "start") {
+      setStartCoords(coords);
+      setStartingLocation(`${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`);
+      setPinningMode("end");
+    } else if (pinningMode === "end") {
+      setEndCoords(coords);
+      setDropOffPoint(`${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`);
+      setPinningMode(null);
+    }
+    setResponsePath([]);
+    setRouteSummaryItems([]);
+  }
+
+  function handleCancelPinning() {
+    setPinningMode(null);
+  }
+
+  useEffect(() => {
+    const coords = parseCoordinates(startingLocation);
+    if (coords) {
+      setStartCoords(coords);
+    } else {
+      setStartCoords(null);
+    }
+  }, [startingLocation]);
+
+  useEffect(() => {
+    const coords = parseCoordinates(dropOffPoint);
+    if (coords) {
+      setEndCoords(coords);
+    } else {
+      setEndCoords(null);
+    }
+  }, [dropOffPoint]);
 
   useEffect(() => {
     setRouteHistory(readRouteHistory(window.localStorage));
@@ -116,29 +177,51 @@ export function RoutePlanner() {
       <div className="app-layout grid lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="app-sidebar">
           <form className="app-sidebar-form" onSubmit={handleSubmit}>
-            <label className="block space-y-2 text-sm font-medium">
+            <div className="block space-y-2 text-sm font-medium">
               <span>Starting Location</span>
-              <input
-                value={startingLocation}
-                onChange={(event) => setStartingLocation(event.target.value)}
-                autoComplete="on"
-                className="app-input"
-                placeholder="Type a starting location"
-                required
-              />
-            </label>
+              <div className="flex gap-2">
+                <input
+                  value={startingLocation}
+                  onChange={(event) => setStartingLocation(event.target.value)}
+                  autoComplete="on"
+                  className="app-input"
+                  placeholder="Type a starting location"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={handlePinStartOnMap}
+                  className="app-button app-button-secondary flex items-center justify-center p-2.5"
+                  title="Pin on Map"
+                  aria-label="Pin starting location on map"
+                >
+                  <MapPin className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
 
-            <label className="block space-y-2 text-sm font-medium">
+            <div className="block space-y-2 text-sm font-medium">
               <span>Drop-off Point</span>
-              <input
-                value={dropOffPoint}
-                onChange={(event) => setDropOffPoint(event.target.value)}
-                autoComplete="on"
-                className="app-input"
-                placeholder="Type a drop-off point"
-                required
-              />
-            </label>
+              <div className="flex gap-2">
+                <input
+                  value={dropOffPoint}
+                  onChange={(event) => setDropOffPoint(event.target.value)}
+                  autoComplete="on"
+                  className="app-input"
+                  placeholder="Type a drop-off point"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={handlePinEndOnMap}
+                  className="app-button app-button-secondary flex items-center justify-center p-2.5"
+                  title="Pin on Map"
+                  aria-label="Pin drop-off point on map"
+                >
+                  <MapPin className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
 
             {responseText ? (
               <div className={`app-response ${isResponseTextError ? "app-response-error" : ""}`}>{responseText}</div>
@@ -217,7 +300,16 @@ export function RoutePlanner() {
         </aside>
 
         <section className="h-full app-map-shell">
-          <RouteMap path={responsePath} startLabel={startingLocation} endLabel={dropOffPoint} />
+          <RouteMap
+            path={responsePath}
+            startLabel={startingLocation}
+            endLabel={dropOffPoint}
+            startCoords={startCoords}
+            endCoords={endCoords}
+            pinningMode={pinningMode}
+            onConfirmLocation={handleConfirmLocation}
+            onCancelPinning={handleCancelPinning}
+          />
         </section>
       </div>
     </main>
