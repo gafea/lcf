@@ -24,8 +24,7 @@ html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family:
-    "Segoe UI", SegoeUI, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", SegoeUI, "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .app-shell {
@@ -95,6 +94,30 @@ body {
 
 .app-button-secondary:hover {
   background: var(--button-hover);
+}
+
+.app-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.app-response {
+  max-height: 18rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-subtle);
+  background: #f8fafc;
+  padding: 0.75rem;
+  font-family: var(--font-geist-mono), "Cascadia Code", "Segoe UI Mono", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.app-response-error {
+  border-color: #f87171;
+  background: #fef2f2;
 }
 
 .app-map {
