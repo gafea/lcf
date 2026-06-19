@@ -79,3 +79,7 @@ export function upsertRouteHistoryEntry(
 
   return nextHistory;
 }
+
+export function clearRouteHistory(storage: Pick<Storage, "removeItem">) {
+  storage.removeItem(ROUTE_HISTORY_STORAGE_KEY);
+}

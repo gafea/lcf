@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { readRouteHistory, ROUTE_HISTORY_STORAGE_KEY, upsertRouteHistoryEntry } from "./route-history";
+import {
+  readRouteHistory,
+  ROUTE_HISTORY_STORAGE_KEY,
+  upsertRouteHistoryEntry,
+  clearRouteHistory,
+} from "./route-history";
 
 function createStorage(initialValue?: string) {
   const store = new Map<string, string>();
@@ -47,5 +52,19 @@ describe("route history helpers", () => {
       ROUTE_HISTORY_STORAGE_KEY,
       JSON.stringify([{ startingLocation: "A", dropOffPoint: "B", lastSearchedAt: 30 }]),
     );
+  });
+
+  it("clears history from storage", () => {
+    const store = new Map<string, string>();
+    store.set(ROUTE_HISTORY_STORAGE_KEY, "[]");
+    const storage = {
+      removeItem: vi.fn((key: string) => {
+        store.delete(key);
+      }),
+    } satisfies Pick<Storage, "removeItem">;
+
+    clearRouteHistory(storage);
+    expect(storage.removeItem).toHaveBeenCalledWith(ROUTE_HISTORY_STORAGE_KEY);
+    expect(store.has(ROUTE_HISTORY_STORAGE_KEY)).toBe(false);
   });
 });

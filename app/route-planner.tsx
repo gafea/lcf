@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { Clock3, Route, MapPin } from "lucide-react";
 import { requestRoutePlan, type RoutePoint } from "./route-api";
-import { readRouteHistory, upsertRouteHistoryEntry, type RouteHistoryEntry } from "./route-history";
+import { readRouteHistory, upsertRouteHistoryEntry, clearRouteHistory, type RouteHistoryEntry } from "./route-history";
 import type { RouteSummaryItem } from "./route-api";
 
 const RouteMap = dynamic(() => import("./route-map").then((module) => module.RouteMap), { ssr: false });
@@ -87,6 +87,11 @@ export function RoutePlanner() {
     setStartingLocation(historyEntry.startingLocation);
     setDropOffPoint(historyEntry.dropOffPoint);
     void submitRouteSearch(historyEntry.startingLocation, historyEntry.dropOffPoint, false);
+  }
+
+  function handleClearHistory() {
+    clearRouteHistory(window.localStorage);
+    setRouteHistory([]);
   }
 
   function handlePinStartOnMap() {
@@ -270,7 +275,16 @@ export function RoutePlanner() {
 
             {routeHistory.length > 0 && (
               <section className="app-history">
-                <h2 className="app-history-title">Recent Searches</h2>
+                <div className="flex justify-between items-center mb-3">
+                  <h2 className="app-history-title text-sm font-bold m-0">Recent Searches</h2>
+                  <button
+                    type="button"
+                    onClick={handleClearHistory}
+                    className="text-xs text-[#005fb8] hover:underline font-semibold cursor-pointer border-0 bg-transparent p-0"
+                  >
+                    Clear All
+                  </button>
+                </div>
                 <ul className="app-history-list">
                   {routeHistory.map((historyEntry) => (
                     <li key={`${historyEntry.startingLocation}-${historyEntry.dropOffPoint}`}>
