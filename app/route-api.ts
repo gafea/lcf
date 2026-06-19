@@ -72,12 +72,42 @@ export async function getRouteResult(apiDomain: string, token: string) {
   return routeResult;
 }
 
+async function requestRoutePlanDebug(apiDomain: string, origin: string, destination: string) {
+  const postResponse = await fetch(`${apiDomain}/mock/route/success`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ origin, destination }),
+  });
+
+  if (!postResponse.ok) {
+    throw new Error(`POST /mock/route/success failed with status ${postResponse.status}`);
+  }
+
+  const getResponse = await fetch(`${apiDomain}/mock/route/success`);
+
+  if (!getResponse.ok) {
+    throw new Error(`GET /mock/route/success failed with status ${getResponse.status}`);
+  }
+
+  const routeResult = (await getResponse.json()) as RouteSuccessResponse;
+
+  return {
+    path: routeResult.path.map(toPoint),
+    summaryText: `total distance: ${routeResult.total_distance}\ntotal time: ${routeResult.total_time}`,
+  };
+}
+
 export async function requestRoutePlan(
   apiDomain: string,
   origin: string,
   destination: string,
   onInProgress?: () => void,
+  useDebugRoute = false,
 ) {
+  if (useDebugRoute) return await requestRoutePlanDebug(apiDomain, origin, destination);
+
   const token = await getRouteToken(apiDomain, origin, destination);
 
   while (true) {

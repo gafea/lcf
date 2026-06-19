@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { requestRoutePlan, type RoutePoint } from "./route-api";
 
 const RouteMap = dynamic(() => import("./route-map").then((module) => module.RouteMap), { ssr: false });
@@ -10,17 +10,53 @@ export function RoutePlanner() {
   const [startingLocation, setStartingLocation] = useState("");
   const [dropOffPoint, setDropOffPoint] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCtrlPressed, setIsCtrlPressed] = useState(false);
   const [responsePath, setResponsePath] = useState<RoutePoint[]>([]);
   const [responseText, setResponseText] = useState("");
   const [isResponseTextError, setIsResponseTextError] = useState(false);
+  const useDebugRouteRef = useRef(false);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Control") {
+        setIsCtrlPressed(true);
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key === "Control") {
+        setIsCtrlPressed(false);
+      }
+    }
+
+    function handleWindowBlur() {
+      setIsCtrlPressed(false);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleWindowBlur);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, []);
 
   async function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    const useDebugRoute = useDebugRouteRef.current;
+    useDebugRouteRef.current = false;
+
     setIsSubmitting(true);
     setIsResponseTextError(false);
     setResponseText("Your route is being calculated...");
-    setResponsePath([]);
+
+    if (!useDebugRoute) {
+      setResponsePath([]);
+    }
 
     try {
       const routeResult = await requestRoutePlan(
@@ -28,6 +64,7 @@ export function RoutePlanner() {
         startingLocation,
         dropOffPoint,
         () => setResponseText("This might take a bit longer..."),
+        useDebugRoute,
       );
       setResponseText(routeResult.summaryText);
       setResponsePath(routeResult.path);
@@ -75,8 +112,15 @@ export function RoutePlanner() {
             ) : null}
 
             <div className="flex gap-3">
-              <button type="submit" className="app-button app-button-primary cursor-pointer" disabled={isSubmitting}>
-                {isSubmitting ? "Finding..." : "Find Route"}
+              <button
+                type="submit"
+                onClick={(event) => {
+                  useDebugRouteRef.current = event.ctrlKey;
+                }}
+                className="app-button app-button-primary cursor-pointer"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Finding..." : isCtrlPressed ? "Find Route (Debug)" : "Find Route"}
               </button>
               <button
                 type="button"
@@ -86,6 +130,7 @@ export function RoutePlanner() {
                   setResponseText("");
                   setIsResponseTextError(false);
                   setResponsePath([]);
+                  useDebugRouteRef.current = false;
                 }}
                 className="app-button app-button-secondary cursor-pointer"
                 disabled={isSubmitting}
