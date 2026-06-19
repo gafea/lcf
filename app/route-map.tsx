@@ -3,6 +3,7 @@
 import L from "leaflet";
 import { useEffect, useRef, useState } from "react";
 import { type RoutePoint } from "./route-api";
+import { reverseGeocode, formatAddress, type NominatimSearchResult } from "./geocoding";
 
 const hongKongCenter: RoutePoint = [22.3193, 114.1694];
 
@@ -48,6 +49,8 @@ export function RouteMap({
   pinningMode,
   onConfirmLocation,
   onCancelPinning,
+  onBoundsChange,
+  onUpdateLocation,
 }: {
   path: RoutePoint[];
   startLabel: string;
@@ -57,11 +60,26 @@ export function RouteMap({
   pinningMode: "start" | "end" | null;
   onConfirmLocation: (coords: RoutePoint) => void;
   onCancelPinning: () => void;
+  onBoundsChange?: (bounds: { west: number; south: number; east: number; north: number }) => void;
+  onUpdateLocation?: (type: "start" | "end", coords: RoutePoint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
   const [renderedPath, setRenderedPath] = useState<RoutePoint[]>([]);
+  const [pinAddress, setPinAddress] = useState("");
+  const skipNextFitBoundsRef = useRef(false);
+  const geocodeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onBoundsChangeRef = useRef(onBoundsChange);
+  useEffect(() => {
+    onBoundsChangeRef.current = onBoundsChange;
+  }, [onBoundsChange]);
+
+  const onUpdateLocationRef = useRef(onUpdateLocation);
+  useEffect(() => {
+    onUpdateLocationRef.current = onUpdateLocation;
+  }, [onUpdateLocation]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -79,17 +97,82 @@ export function RouteMap({
     overlayRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
-    requestAnimationFrame(() => {
+    const handleMoveEnd = () => {
+      if (!mapRef.current) return;
+      const bounds = map.getBounds();
+      onBoundsChangeRef.current?.({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth(),
+      });
+    };
+
+    map.on("moveend", handleMoveEnd);
+
+    const rafId = requestAnimationFrame(() => {
+      if (!mapRef.current) return;
       map.invalidateSize();
+      handleMoveEnd();
     });
 
     return () => {
+      cancelAnimationFrame(rafId);
+      map.off("moveend", handleMoveEnd);
       overlayRef.current?.remove();
       overlayRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !pinningMode) {
+      setPinAddress("");
+      return;
+    }
+
+    const handleMapMove = () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+      }
+      setPinAddress("Locating...");
+    };
+
+    const handleMapMoveEnd = () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+      }
+
+      setPinAddress("Locating...");
+
+      geocodeTimeoutRef.current = setTimeout(async () => {
+        if (!mapRef.current) return;
+        const center = map.getCenter();
+        try {
+          const data = await reverseGeocode(center.lat, center.lng);
+          const name = formatAddress(data) || data.display_name;
+          setPinAddress(name || `${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`);
+        } catch (e) {
+          setPinAddress(`${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`);
+        }
+      }, 600);
+    };
+
+    map.on("move", handleMapMove);
+    map.on("moveend", handleMapMoveEnd);
+
+    handleMapMoveEnd();
+
+    return () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+      }
+      map.off("move", handleMapMove);
+      map.off("moveend", handleMapMoveEnd);
+    };
+  }, [pinningMode]);
 
   useEffect(() => {
     if (path.length === 0) {
@@ -143,6 +226,8 @@ export function RouteMap({
       }).addTo(overlay);
     }
 
+    const isDraggable = path.length > 0;
+
     if (startPoint) {
       const startIcon = L.divIcon({
         className: "route-pin-icon",
@@ -151,7 +236,7 @@ export function RouteMap({
         iconAnchor: [9, 18],
       });
 
-      const startMarker = L.marker(startPoint, { icon: startIcon }).addTo(overlay);
+      const startMarker = L.marker(startPoint, { icon: startIcon, draggable: isDraggable }).addTo(overlay);
       startMarker.bindTooltip(startLabel || "Starting Location", {
         permanent: true,
         direction: "top",
@@ -159,6 +244,14 @@ export function RouteMap({
         className: "route-label route-label-start",
         opacity: 1,
       });
+
+      if (isDraggable) {
+        startMarker.on("dragend", (event) => {
+          const marker = event.target as L.Marker;
+          const newLatLng = marker.getLatLng();
+          onUpdateLocationRef.current?.("start", [newLatLng.lat, newLatLng.lng]);
+        });
+      }
     }
 
     if (endPoint) {
@@ -169,7 +262,7 @@ export function RouteMap({
         iconAnchor: [9, 18],
       });
 
-      const endMarker = L.marker(endPoint, { icon: endIcon }).addTo(overlay);
+      const endMarker = L.marker(endPoint, { icon: endIcon, draggable: isDraggable }).addTo(overlay);
       endMarker.bindTooltip(endLabel || "Drop-off Point", {
         permanent: true,
         direction: "bottom",
@@ -177,20 +270,32 @@ export function RouteMap({
         className: "route-label route-label-end",
         opacity: 1,
       });
+
+      if (isDraggable) {
+        endMarker.on("dragend", (event) => {
+          const marker = event.target as L.Marker;
+          const newLatLng = marker.getLatLng();
+          onUpdateLocationRef.current?.("end", [newLatLng.lat, newLatLng.lng]);
+        });
+      }
     }
 
     // Fit bounds to all shown features
-    const boundsPoints: L.LatLngExpression[] = [];
-    if (pathToDraw.length > 0) {
-      boundsPoints.push(...pathToDraw);
+    if (skipNextFitBoundsRef.current) {
+      skipNextFitBoundsRef.current = false;
     } else {
-      if (startPoint) boundsPoints.push(startPoint);
-      if (endPoint) boundsPoints.push(endPoint);
-    }
+      const boundsPoints: L.LatLngExpression[] = [];
+      if (pathToDraw.length > 0) {
+        boundsPoints.push(...pathToDraw);
+      } else {
+        if (startPoint) boundsPoints.push(startPoint);
+        if (endPoint) boundsPoints.push(endPoint);
+      }
 
-    if (boundsPoints.length > 0) {
-      const routeBounds = L.latLngBounds(boundsPoints);
-      map.fitBounds(routeBounds, { padding: [24, 24], maxZoom: 15 });
+      if (boundsPoints.length > 0) {
+        const routeBounds = L.latLngBounds(boundsPoints);
+        map.fitBounds(routeBounds, { padding: [24, 24], maxZoom: 15 });
+      }
     }
 
     requestAnimationFrame(() => {
@@ -213,8 +318,16 @@ export function RouteMap({
               transform: "translate(-50%, -100%)",
               zIndex: 1000,
               pointerEvents: "none",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
             }}
           >
+            {pinAddress && (
+              <div className="bg-white/95 px-2.5 py-1 rounded-full shadow-lg border border-[#d7dbe0] text-xxs font-semibold whitespace-nowrap mb-1 text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+                {pinAddress}
+              </div>
+            )}
             <span className={`route-pin-shape ${pinningMode === "start" ? "route-pin-start-shape" : ""}`}>
               <span className="route-pin-dot"></span>
             </span>
@@ -232,6 +345,7 @@ export function RouteMap({
                   const map = mapRef.current;
                   if (map) {
                     const center = map.getCenter();
+                    skipNextFitBoundsRef.current = true;
                     onConfirmLocation([center.lat, center.lng]);
                   }
                 }}

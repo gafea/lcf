@@ -23,3 +23,4 @@ Open [http://localhost:3030](http://localhost:3030) with your browser to see the
 - _Simplified Map Display_: Hid the point numbers and show label and icons.
 - _Driving Path_: Driving path with routes provided by OSRM.
 - _Drag & Drop_: Specify Starting Point and Drop-off Point using the map.
+- _Address Autocomplete_: Auto-Suggest Addresses when users are typing.

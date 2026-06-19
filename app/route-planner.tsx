@@ -8,6 +8,7 @@ import { readRouteHistory, upsertRouteHistoryEntry, clearRouteHistory, type Rout
 import type { RouteSummaryItem } from "./route-api";
 
 const RouteMap = dynamic(() => import("./route-map").then((module) => module.RouteMap), { ssr: false });
+import { reverseGeocode, searchPlaces, formatAddress, type NominatimSearchResult } from "./geocoding";
 
 export function RoutePlanner() {
   const [startingLocation, setStartingLocation] = useState("");
@@ -24,6 +25,19 @@ export function RoutePlanner() {
   const [startCoords, setStartCoords] = useState<RoutePoint | null>(null);
   const [endCoords, setEndCoords] = useState<RoutePoint | null>(null);
   const [pinningMode, setPinningMode] = useState<"start" | "end" | null>(null);
+
+  const [startSuggestions, setStartSuggestions] = useState<NominatimSearchResult[]>([]);
+  const [endSuggestions, setEndSuggestions] = useState<NominatimSearchResult[]>([]);
+  const [mapBounds, setMapBounds] = useState<{ west: number; south: number; east: number; north: number } | null>(null);
+
+  const shouldSearchStartRef = useRef(false);
+  const shouldSearchEndRef = useRef(false);
+  const lastResolvedStartRef = useRef("");
+  const lastResolvedEndRef = useRef("");
+  const isResolvingStartRef = useRef(false);
+
+  const startContainerRef = useRef<HTMLDivElement | null>(null);
+  const endContainerRef = useRef<HTMLDivElement | null>(null);
 
   function parseCoordinates(str: string): RoutePoint | null {
     const parts = str.split(",").map((p) => Number(p.trim()));
@@ -46,6 +60,12 @@ export function RoutePlanner() {
     setStartCoords(null);
     setEndCoords(null);
     setPinningMode(null);
+    setStartSuggestions([]);
+    setEndSuggestions([]);
+    shouldSearchStartRef.current = false;
+    shouldSearchEndRef.current = false;
+    lastResolvedStartRef.current = "";
+    lastResolvedEndRef.current = "";
   }
 
   async function submitRouteSearch(origin: string, destination: string, useDebugRoute: boolean) {
@@ -102,15 +122,59 @@ export function RoutePlanner() {
     setPinningMode("end");
   }
 
-  function handleConfirmLocation(coords: RoutePoint) {
+  async function handleConfirmLocation(coords: RoutePoint) {
     if (pinningMode === "start") {
       setStartCoords(coords);
-      setStartingLocation(`${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`);
+      setStartingLocation("Resolving address...");
       setPinningMode("end");
+      isResolvingStartRef.current = true;
+      try {
+        const data = await reverseGeocode(coords[0], coords[1]);
+        const name = formatAddress(data) || data.display_name;
+        const finalVal = name || `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`;
+        shouldSearchStartRef.current = false;
+        setStartingLocation(finalVal);
+        lastResolvedStartRef.current = finalVal;
+      } catch (e) {
+        const coordStr = `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`;
+        shouldSearchStartRef.current = false;
+        setStartingLocation(coordStr);
+        lastResolvedStartRef.current = coordStr;
+      } finally {
+        isResolvingStartRef.current = false;
+      }
     } else if (pinningMode === "end") {
       setEndCoords(coords);
-      setDropOffPoint(`${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`);
+      setDropOffPoint("Resolving address...");
       setPinningMode(null);
+
+      let finalDropOffVal = `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`;
+      try {
+        const data = await reverseGeocode(coords[0], coords[1]);
+        const name = formatAddress(data) || data.display_name;
+        if (name) {
+          finalDropOffVal = name;
+        }
+      } catch (e) {
+        // ignore
+      }
+      shouldSearchEndRef.current = false;
+      setDropOffPoint(finalDropOffVal);
+      lastResolvedEndRef.current = finalDropOffVal;
+
+      // Auto start search!
+      let origin = lastResolvedStartRef.current;
+      if (isResolvingStartRef.current) {
+        for (let i = 0; i < 30; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          if (!isResolvingStartRef.current) {
+            origin = lastResolvedStartRef.current;
+            break;
+          }
+        }
+      }
+
+      void submitRouteSearch(origin, finalDropOffVal, false);
     }
     setResponsePath([]);
     setRouteSummaryItems([]);
@@ -120,11 +184,131 @@ export function RoutePlanner() {
     setPinningMode(null);
   }
 
+  async function handleUpdateLocation(type: "start" | "end", coords: RoutePoint) {
+    setResponsePath([]);
+    setRouteSummaryItems([]);
+
+    if (type === "start") {
+      setStartCoords(coords);
+      setStartingLocation("Resolving address...");
+      let finalStartVal = `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`;
+      try {
+        const data = await reverseGeocode(coords[0], coords[1]);
+        const name = formatAddress(data) || data.display_name;
+        if (name) {
+          finalStartVal = name;
+        }
+      } catch (e) {
+        // ignore
+      }
+      shouldSearchStartRef.current = false;
+      setStartingLocation(finalStartVal);
+      lastResolvedStartRef.current = finalStartVal;
+
+      void submitRouteSearch(finalStartVal, lastResolvedEndRef.current, false);
+    } else {
+      setEndCoords(coords);
+      setDropOffPoint("Resolving address...");
+      let finalDropOffVal = `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}`;
+      try {
+        const data = await reverseGeocode(coords[0], coords[1]);
+        const name = formatAddress(data) || data.display_name;
+        if (name) {
+          finalDropOffVal = name;
+        }
+      } catch (e) {
+        // ignore
+      }
+      shouldSearchEndRef.current = false;
+      setDropOffPoint(finalDropOffVal);
+      lastResolvedEndRef.current = finalDropOffVal;
+
+      void submitRouteSearch(lastResolvedStartRef.current, finalDropOffVal, false);
+    }
+  }
+
+  function handleSelectStartSuggestion(suggestion: NominatimSearchResult) {
+    shouldSearchStartRef.current = false;
+    const name = formatAddress(suggestion);
+    const finalVal = name || suggestion.display_name;
+    setStartingLocation(finalVal);
+    lastResolvedStartRef.current = finalVal;
+    setStartCoords([Number(suggestion.lat), Number(suggestion.lon)]);
+    setStartSuggestions([]);
+  }
+
+  function handleSelectEndSuggestion(suggestion: NominatimSearchResult) {
+    shouldSearchEndRef.current = false;
+    const name = formatAddress(suggestion);
+    const finalVal = name || suggestion.display_name;
+    setDropOffPoint(finalVal);
+    lastResolvedEndRef.current = finalVal;
+    setEndCoords([Number(suggestion.lat), Number(suggestion.lon)]);
+    setEndSuggestions([]);
+  }
+
+  useEffect(() => {
+    if (!shouldSearchStartRef.current) {
+      setStartSuggestions([]);
+      return;
+    }
+    if (!startingLocation.trim()) {
+      setStartSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchPlaces(startingLocation, mapBounds);
+        setStartSuggestions(results);
+      } catch (e) {
+        console.error(e);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [startingLocation, mapBounds]);
+
+  useEffect(() => {
+    if (!shouldSearchEndRef.current) {
+      setEndSuggestions([]);
+      return;
+    }
+    if (!dropOffPoint.trim()) {
+      setEndSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchPlaces(dropOffPoint, mapBounds);
+        setEndSuggestions(results);
+      } catch (e) {
+        console.error(e);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [dropOffPoint, mapBounds]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (startContainerRef.current && !startContainerRef.current.contains(event.target as Node)) {
+        setStartSuggestions([]);
+      }
+      if (endContainerRef.current && !endContainerRef.current.contains(event.target as Node)) {
+        setEndSuggestions([]);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   useEffect(() => {
     const coords = parseCoordinates(startingLocation);
     if (coords) {
       setStartCoords(coords);
-    } else {
+    } else if (!startingLocation.trim() || shouldSearchStartRef.current) {
       setStartCoords(null);
     }
   }, [startingLocation]);
@@ -133,7 +317,7 @@ export function RoutePlanner() {
     const coords = parseCoordinates(dropOffPoint);
     if (coords) {
       setEndCoords(coords);
-    } else {
+    } else if (!dropOffPoint.trim() || shouldSearchEndRef.current) {
       setEndCoords(null);
     }
   }, [dropOffPoint]);
@@ -179,24 +363,54 @@ export function RoutePlanner() {
 
   return (
     <main className="app-shell">
-      <div className="app-layout grid lg:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="app-layout grid grid-cols-1 min-w-0 w-full lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="app-sidebar">
           <form className="app-sidebar-form" onSubmit={handleSubmit}>
-            <div className="block space-y-2 text-sm font-medium">
+            <div ref={startContainerRef} className="block space-y-2 text-sm font-medium">
               <span>Starting Location</span>
-              <div className="flex gap-2">
-                <input
-                  value={startingLocation}
-                  onChange={(event) => setStartingLocation(event.target.value)}
-                  autoComplete="on"
-                  className="app-input"
-                  placeholder="Type a starting location"
-                  required
-                />
+              <div className="flex gap-2 relative">
+                <div className="relative flex-1">
+                  <input
+                    value={startingLocation}
+                    onChange={(event) => {
+                      shouldSearchStartRef.current = true;
+                      setStartingLocation(event.target.value);
+                      lastResolvedStartRef.current = event.target.value;
+                    }}
+                    onFocus={(event) => event.target.select()}
+                    onClick={(event) => (event.target as HTMLInputElement).select()}
+                    autoComplete="off"
+                    className="app-input"
+                    placeholder="Type a starting location"
+                    required
+                  />
+                  {startSuggestions.length > 0 && (
+                    <ul className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl text-sm text-gray-700">
+                      {startSuggestions.map((suggestion) => {
+                        const title = formatAddress(suggestion);
+                        const subtitle = suggestion.display_name;
+                        return (
+                          <li key={suggestion.place_id}>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectStartSuggestion(suggestion)}
+                              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 active:bg-slate-100 transition-colors flex flex-col gap-0.5 focus:outline-none focus:bg-slate-50"
+                            >
+                              <span className="font-semibold text-slate-800 text-xs sm:text-sm truncate">
+                                {title || suggestion.display_name}
+                              </span>
+                              {title && <span className="text-xxs sm:text-xs text-slate-400 truncate">{subtitle}</span>}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={handlePinStartOnMap}
-                  className="app-button app-button-secondary flex items-center justify-center p-2.5"
+                  className="app-button app-pin-button app-button-secondary flex items-center justify-center p-2.5"
                   title="Pin on Map"
                   aria-label="Pin starting location on map"
                 >
@@ -205,21 +419,51 @@ export function RoutePlanner() {
               </div>
             </div>
 
-            <div className="block space-y-2 text-sm font-medium">
+            <div ref={endContainerRef} className="block space-y-2 text-sm font-medium">
               <span>Drop-off Point</span>
-              <div className="flex gap-2">
-                <input
-                  value={dropOffPoint}
-                  onChange={(event) => setDropOffPoint(event.target.value)}
-                  autoComplete="on"
-                  className="app-input"
-                  placeholder="Type a drop-off point"
-                  required
-                />
+              <div className="flex gap-2 relative">
+                <div className="relative flex-1">
+                  <input
+                    value={dropOffPoint}
+                    onChange={(event) => {
+                      shouldSearchEndRef.current = true;
+                      setDropOffPoint(event.target.value);
+                      lastResolvedEndRef.current = event.target.value;
+                    }}
+                    onFocus={(event) => event.target.select()}
+                    onClick={(event) => (event.target as HTMLInputElement).select()}
+                    autoComplete="off"
+                    className="app-input"
+                    placeholder="Type a drop-off point"
+                    required
+                  />
+                  {endSuggestions.length > 0 && (
+                    <ul className="absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl text-sm text-gray-700">
+                      {endSuggestions.map((suggestion) => {
+                        const title = formatAddress(suggestion);
+                        const subtitle = suggestion.display_name;
+                        return (
+                          <li key={suggestion.place_id}>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectEndSuggestion(suggestion)}
+                              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 active:bg-slate-100 transition-colors flex flex-col gap-0.5 focus:outline-none focus:bg-slate-50"
+                            >
+                              <span className="font-semibold text-slate-800 text-xs sm:text-sm truncate">
+                                {title || suggestion.display_name}
+                              </span>
+                              {title && <span className="text-xxs sm:text-xs text-slate-400 truncate">{subtitle}</span>}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={handlePinEndOnMap}
-                  className="app-button app-button-secondary flex items-center justify-center p-2.5"
+                  className="app-button app-pin-button app-button-secondary flex items-center justify-center p-2.5"
                   title="Pin on Map"
                   aria-label="Pin drop-off point on map"
                 >
@@ -323,6 +567,8 @@ export function RoutePlanner() {
             pinningMode={pinningMode}
             onConfirmLocation={handleConfirmLocation}
             onCancelPinning={handleCancelPinning}
+            onBoundsChange={setMapBounds}
+            onUpdateLocation={handleUpdateLocation}
           />
         </section>
       </div>

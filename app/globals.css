@@ -203,7 +203,6 @@ button {
 }
 
 .app-history-title {
-  margin-bottom: 0.75rem;
   font-size: 0.875rem;
   font-weight: 700;
 }
@@ -358,4 +357,8 @@ button {
 
 .route-label::before {
   border-top-color: rgba(255, 255, 255, 0.95);
+}
+
+.app-pin-button {
+  height: 2.75rem !important;
 }
