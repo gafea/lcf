@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --background: #ffffff;
@@ -11,6 +12,8 @@
   --brand-hover: #004c93;
   --focus-ring: #c7e0f4;
   --button-hover: #f5f5f5;
+  --route-line: #005fb8;
+  --route-marker: #004c93;
 }
 
 @theme inline {
@@ -125,4 +128,26 @@ body {
   height: 100%;
   width: 100%;
   border: 0;
+}
+
+.app-map-shell {
+  height: 100%;
+  min-height: 70vh;
+}
+
+/* Numbered route marker */
+.route-number-icon {
+  display: block;
+}
+.route-number-icon .num {
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  border-radius: 9999px;
+  background: var(--route-marker);
+  color: white;
+  text-align: center;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.9);
 }

@@ -1,16 +1,18 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState } from "react";
 
-type RoutePlannerProps = {
-  apiDomain: string;
-};
+type RoutePlannerProps = { apiDomain: string };
+type RoutePoint = [number, number];
+
+const RouteMap = dynamic(() => import("./route-map").then((module) => module.RouteMap), { ssr: false });
 
 export function RoutePlanner({ apiDomain }: RoutePlannerProps) {
   const [startingLocation, setStartingLocation] = useState("");
   const [dropOffPoint, setDropOffPoint] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [responsePath, setResponsePath] = useState([]);
+  const [responsePath, setResponsePath] = useState<RoutePoint[]>([]);
   const [responseText, setResponseText] = useState("");
   const [isResponseTextError, setIsResponseTextError] = useState(false);
 
@@ -69,7 +71,9 @@ export function RoutePlanner({ apiDomain }: RoutePlannerProps) {
         if (routeResult.status != "in progress") {
           if (routeResult.status === "success") {
             setResponseText(`total distance: ${routeResult.total_distance}\ntotal time: ${routeResult.total_time}`);
-            setResponsePath(routeResult.path);
+            setResponsePath(
+              routeResult.path.map((point: string[]) => [Number(point[0]), Number(point[1])] as RoutePoint),
+            );
             break;
           }
 
@@ -129,8 +133,11 @@ export function RoutePlanner({ apiDomain }: RoutePlannerProps) {
                   setStartingLocation("");
                   setDropOffPoint("");
                   setResponseText("");
+                  setIsResponseTextError(false);
+                  setResponsePath([]);
                 }}
                 className="app-button app-button-secondary cursor-pointer"
+                disabled={isSubmitting}
               >
                 Reset
               </button>
@@ -138,12 +145,8 @@ export function RoutePlanner({ apiDomain }: RoutePlannerProps) {
           </form>
         </aside>
 
-        <section className="h-full">
-          <iframe
-            className="app-map"
-            loading="lazy"
-            src="https://www.openstreetmap.org/export/embed.html?bbox=113.823%2C22.197%2C114.372%2C22.494&layer=mapnik"
-          />
+        <section className="h-full app-map-shell">
+          <RouteMap path={responsePath} />
         </section>
       </div>
     </main>
