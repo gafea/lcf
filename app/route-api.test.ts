@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { getRouteResult, postRouteToken, requestRoutePlan } from "./route-api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getRouteResult, getRouteToken, requestRoutePlan } from "./route-api";
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -13,10 +13,15 @@ function textResponse(body: string, init?: ResponseInit) {
 }
 
 describe("route API helpers", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("covers POST /mock/route/500", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(textResponse("Internal Server Error", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(postRouteToken("http://localhost:8000", "A", "B", fetchMock)).rejects.toThrow(
+    await expect(getRouteToken("http://localhost:8000", "A", "B", false)).rejects.toThrow(
       "POST /route failed with status 500",
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -24,8 +29,9 @@ describe("route API helpers", () => {
 
   it("covers POST /mock/route/success", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ token: "9d3503e0-7236-4e47-a62f-8b01b5646c16" }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(postRouteToken("http://localhost:8000", "A", "B", fetchMock)).resolves.toBe(
+    await expect(getRouteToken("http://localhost:8000", "A", "B", false)).resolves.toBe(
       "9d3503e0-7236-4e47-a62f-8b01b5646c16",
     );
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/route", expect.objectContaining({ method: "POST" }));
@@ -33,8 +39,9 @@ describe("route API helpers", () => {
 
   it("covers GET /mock/route/500", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(textResponse("Internal Server Error", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getRouteResult("http://localhost:8000", "token-1", fetchMock)).rejects.toThrow(
+    await expect(getRouteResult("http://localhost:8000", "token-1", false)).rejects.toThrow(
       "GET /route/token-1 failed with status 500",
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -42,8 +49,9 @@ describe("route API helpers", () => {
 
   it("covers GET /mock/route/inprogress", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ status: "in progress" }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getRouteResult("http://localhost:8000", "token-2", fetchMock)).resolves.toEqual({
+    await expect(getRouteResult("http://localhost:8000", "token-2", false)).resolves.toEqual({
       status: "in progress",
     });
   });
@@ -55,8 +63,9 @@ describe("route API helpers", () => {
         error: "Location not accessible by car",
       }),
     );
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getRouteResult("http://localhost:8000", "token-3", fetchMock)).resolves.toEqual({
+    await expect(getRouteResult("http://localhost:8000", "token-3", false)).resolves.toEqual({
       status: "failure",
       error: "Location not accessible by car",
     });
@@ -75,8 +84,9 @@ describe("route API helpers", () => {
         total_time: 1800,
       }),
     );
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getRouteResult("http://localhost:8000", "token-4", fetchMock)).resolves.toEqual({
+    await expect(getRouteResult("http://localhost:8000", "token-4", false)).resolves.toEqual({
       status: "success",
       path: [
         ["22.372081", "114.107877"],
@@ -104,16 +114,17 @@ describe("route API helpers", () => {
           total_time: 1800,
         }),
       );
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(requestRoutePlan("http://localhost:8000", "A", "B", fetchMock)).resolves.toEqual({
+    await expect(requestRoutePlan("http://localhost:8000", "A", "B")).resolves.toEqual({
       path: [
         [22.372081, 114.107877],
         [22.326442, 114.167811],
         [22.284419, 114.15951],
       ],
       summaryItems: [
-        { kind: "distance", title: "Total Distance", value: "20.00 km" },
-        { kind: "time", title: "Total Time", value: "30m 0s" },
+        { kind: "distance", title: "Total Distance", value: "20 km" },
+        { kind: "time", title: "Total Time", value: "30m" },
       ],
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -124,8 +135,9 @@ describe("route API helpers", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse({ token: "token-6" }))
       .mockResolvedValueOnce(textResponse("Internal Server Error", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(requestRoutePlan("http://localhost:8000", "A", "B", fetchMock)).rejects.toThrow(
+    await expect(requestRoutePlan("http://localhost:8000", "A", "B")).rejects.toThrow(
       "GET /route/token-6 failed with status 500",
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);

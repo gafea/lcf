@@ -1,7 +1,7 @@
 "use client";
 
 import L from "leaflet";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type RoutePoint } from "./route-api";
 
 const hongKongCenter: RoutePoint = [22.3193, 114.1694];
@@ -12,10 +12,38 @@ function getCssVariable(name: string, fallback: string) {
   return value || fallback;
 }
 
+async function fetchDrivingRoute(points: RoutePoint[]): Promise<RoutePoint[]> {
+  if (points.length < 2) {
+    return points;
+  }
+  // Convert RoutePoint [lat, lng] to OSRM format: lng,lat;lng,lat...
+  const coordsString = points.map(([lat, lng]) => `${lng},${lat}`).join(";");
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`OSRM returned HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+      const geometry = data.routes[0].geometry;
+      if (geometry && geometry.type === "LineString" && Array.isArray(geometry.coordinates)) {
+        // geometry.coordinates is an array of [lng, lat]
+        return geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng] as RoutePoint);
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching driving route from OSRM:", error);
+  }
+  return points; // Fallback to the original coordinates if request fails
+}
+
 export function RouteMap({ path, startLabel, endLabel }: { path: RoutePoint[]; startLabel: string; endLabel: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
+  const [renderedPath, setRenderedPath] = useState<RoutePoint[]>([]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -46,6 +74,26 @@ export function RouteMap({ path, startLabel, endLabel }: { path: RoutePoint[]; s
   }, []);
 
   useEffect(() => {
+    if (path.length === 0) {
+      setRenderedPath([]);
+      return;
+    }
+
+    let active = true;
+    const loadRoute = async () => {
+      const drivingRoute = await fetchDrivingRoute(path);
+      if (active) {
+        setRenderedPath(drivingRoute);
+      }
+    };
+    loadRoute();
+
+    return () => {
+      active = false;
+    };
+  }, [path]);
+
+  useEffect(() => {
     const map = mapRef.current;
     const overlay = overlayRef.current;
 
@@ -62,9 +110,12 @@ export function RouteMap({ path, startLabel, endLabel }: { path: RoutePoint[]; s
 
     const startPoint = path[0];
     const endPoint = path[path.length - 1];
-    const routeBounds = L.latLngBounds(path);
 
-    L.polyline(path, {
+    // Use the OSRM driving route if it has loaded, otherwise fall back to drawing the original path
+    const pathToDraw = renderedPath.length > 0 ? renderedPath : path;
+    const routeBounds = L.latLngBounds(pathToDraw);
+
+    L.polyline(pathToDraw, {
       color: getCssVariable("--route-line", "#005fb8"),
       weight: 4,
       opacity: 0.9,
@@ -108,7 +159,7 @@ export function RouteMap({ path, startLabel, endLabel }: { path: RoutePoint[]; s
     requestAnimationFrame(() => {
       map.invalidateSize();
     });
-  }, [path, startLabel, endLabel]);
+  }, [path, renderedPath, startLabel, endLabel]);
 
   return <div ref={containerRef} className="app-map" />;
 }

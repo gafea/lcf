@@ -154,7 +154,6 @@ button {
 }
 
 .app-summary-card {
-  border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
   background: #f8fafc;
   padding: 0.875rem;
